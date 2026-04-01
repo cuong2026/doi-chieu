@@ -1,0 +1,5 @@
+{
+  "name": "Đối chiếu chứng từ tự động",
+  "description": "Tự động đối chiếu dữ liệu giữa các chứng từ của cùng một đơn hàng (đơn đặt hàng, phiếu xuất kho, hóa đơn) để phát hiện sai lệch. Hỗ trợ xử lý file lớn bằng cách tự động chia nhỏ (chunking).",
+  "requestFramePermissions": []
+}
