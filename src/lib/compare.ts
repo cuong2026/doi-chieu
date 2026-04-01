@@ -22,7 +22,44 @@ function normalizeText(value: string | null | undefined): string {
   return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-// ─── THÊM MỚI: fuzzy name matching ───────────────────────────────────────────
+function stripVietnameseAccents(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizeUnitSmart(value: string | null | undefined): string {
+  const text = stripVietnameseAccents(String(value || '')).toLowerCase().trim();
+  const normalized = text.replace(/\s+/g, ' ');
+  const unitMap: Record<string, string> = {
+    cai: 'cai', cái: 'cai', bo: 'bo', bộ: 'bo', lo: 'lo', lọ: 'lo', hop: 'hop', hộp: 'hop',
+    vien: 'vien', viên: 'vien', tap: 'tap', tập: 'tap', tui: 'tui', túi: 'tui', vi: 'vi', vỉ: 'vi'
+  };
+  return unitMap[normalized] ?? normalized;
+}
+
+function isEquivalentUnit(a: string | null | undefined, b: string | null | undefined): boolean {
+  const normA = normalizeUnitSmart(a);
+  const normB = normalizeUnitSmart(b);
+  if (!normA && !normB) return true;
+  if (!normA || !normB) return false;
+  return normA === normB;
+}
+
+function normalizeProductNameSmart(value: string | null | undefined): string {
+  let text = String(value || '');
+  text = stripVietnameseAccents(text).toLowerCase();
+  text = text.replace(/[\[\]\(\)\{\}]/g, ' ');
+  text = text.replace(/[\u2010-\u2015]/g, '-');
+  text = text.replace(/[_\/,:;]+/g, ' ');
+  text = text.replace(/(?:^|\s)mg(?:\s|$)/g, ' ');
+  text = text.replace(/-+\s*mg\b/g, ' ');
+  text = text.replace(/\bmg\b/g, ' ');
+  text = text.replace(/(\d)\s*[,\.]\s*(\d)/g, '$1.$2');
+  text = text.replace(/(\d)\s*cm\b/g, '$1cm');
+  text = text.replace(/([a-zA-Z]+)(\d+mm)\b/g, '$1 $2');
+  text = text.replace(/[-–—_]+/g, ' ');
+  text = text.replace(/\s+/g, ' ');
+  return text.trim();
+}
 
 function normalizeMatchText(value: string | null | undefined): string {
   return String(value || '')
@@ -58,23 +95,20 @@ function levenshteinDistance(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
-function calculateNameSimilarity(a: string, b: string): number {
-  const rawA = normalizeMatchText(a);
-  const rawB = normalizeMatchText(b);
+function stripProductCodeFromName(value: string): string {
+  const productCode = extractProductCode(value);
+  if (!productCode) return value;
+  const escaped = productCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), ' ').replace(/\s+/g, ' ').trim();
+}
 
-  if (!rawA || !rawB) return 0;
-  if (rawA === rawB) return 1;
-
-  const cleanA = stripLeadingCode(rawA);
-  const cleanB = stripLeadingCode(rawB);
-
-  if (cleanA === cleanB) return 0.98;
-
-  if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) return 0.93;
-
-  const dist = levenshteinDistance(cleanA, cleanB);
-  const maxLen = Math.max(cleanA.length, cleanB.length);
-  return maxLen > 0 ? 1 - dist / maxLen : 0;
+function extractProductCode(text: string | null | undefined): string | null {
+  const normalized = String(text || '').toUpperCase();
+  const tokens = normalized.split(/[^A-Z0-9]+/).filter(Boolean);
+  const candidates = tokens
+    .filter(t => /[A-Z]/.test(t) && /\d/.test(t) && t.length >= 4)
+    .sort((a, b) => b.length - a.length);
+  return candidates[0] || null;
 }
 
 function normalizeCodeText(value: string | null | undefined): string {
@@ -84,17 +118,122 @@ function normalizeCodeText(value: string | null | undefined): string {
     .trim();
 }
 
+function isLikelyInternalNumericCode(value: string | null | undefined): boolean {
+  const normalized = normalizeCodeText(value);
+  return /^\d{3,}$/.test(normalized);
+}
+
+function isLikelyProductCode(value: string | null | undefined): boolean {
+  const normalized = normalizeCodeText(value);
+  return normalized.length >= 4 && /[A-Z]/.test(normalized) && /\d/.test(normalized);
+}
+
+function chooseBestDerivedModelCode(item: LineItem): string | null {
+  const itemCode = normalizeCodeText(item.itemCode);
+  const nameCode = extractProductCode(item.itemName);
+
+  if (itemCode && isLikelyProductCode(itemCode)) {
+    return itemCode;
+  }
+
+  if (nameCode) {
+    return nameCode;
+  }
+
+  if (itemCode && isLikelyInternalNumericCode(itemCode)) {
+    return itemCode;
+  }
+
+  return null;
+}
+
+function getPrimaryProductCode(item: LineItem): string | null {
+  return chooseBestDerivedModelCode(item);
+}
+
+function getImportantTokenCategories(text: string): Record<string, Set<string>> {
+  const normalized = normalizeProductNameSmart(text);
+  const categories: Record<string, Set<string>> = {
+    thickness: new Set<string>(),
+    size: new Set<string>(),
+    grade: new Set<string>(),
+  };
+
+  const thicknessMatches = normalized.match(/\b(?:0\.35|0,35|0\.5|0,5|0\.7|0,7|1\.0|1,0)\b/g);
+  thicknessMatches?.forEach(v => categories.thickness.add(v.replace(',', '.')));
+
+  const sizeMatches = normalized.match(/\b(?:a4|a5|no10|no12|\d+cm)\b/g);
+  sizeMatches?.forEach(v => categories.size.add(v));
+
+  const gradeMatches = normalized.match(/\b(?:r1|r3)\b/g);
+  gradeMatches?.forEach(v => categories.grade.add(v));
+
+  return categories;
+}
+
+function hasImportantTokenConflict(a: string, b: string): boolean {
+  const categoriesA = getImportantTokenCategories(a);
+  const categoriesB = getImportantTokenCategories(b);
+
+  for (const category of Object.keys(categoriesA) as Array<keyof typeof categoriesA>) {
+    const valuesA = categoriesA[category];
+    const valuesB = categoriesB[category];
+    if (valuesA.size === 0 || valuesB.size === 0) continue;
+    const union = new Set([...valuesA, ...valuesB]);
+    if (union.size > 1) return true;
+  }
+
+  return false;
+}
+
+function calculateNameSimilarity(a: string, b: string): number {
+  const rawA = normalizeProductNameSmart(a);
+  const rawB = normalizeProductNameSmart(b);
+
+  if (!rawA || !rawB) return 0;
+  if (rawA === rawB) return 1;
+
+  const cleanA = stripProductCodeFromName(rawA);
+  const cleanB = stripProductCodeFromName(rawB);
+
+  if (cleanA === cleanB) return 0.98;
+  if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) return 0.94;
+  if (stripLeadingCode(cleanA) === stripLeadingCode(cleanB)) return 0.92;
+
+  const dist = levenshteinDistance(cleanA, cleanB);
+  const maxLen = Math.max(cleanA.length, cleanB.length);
+  let score = maxLen > 0 ? 1 - dist / maxLen : 0;
+
+  if (hasImportantTokenConflict(rawA, rawB)) {
+    score = Math.min(score, 0.65);
+  }
+
+  return score;
+}
+
+function calculateProductCodeSimilarity(a: string | null | undefined, b: string | null | undefined): number {
+  const codeA = normalizeCodeText(a);
+  const codeB = normalizeCodeText(b);
+
+  if (!codeA || !codeB) return 0;
+  if (codeA === codeB) return 1;
+  if (codeA.includes(codeB) || codeB.includes(codeA)) return 0.93;
+
+  const digitsA = (codeA.match(/\d+/g) || []).join('');
+  const digitsB = (codeB.match(/\d+/g) || []).join('');
+  if (digitsA && digitsB && digitsA === digitsB) return 0.85;
+
+  return 0;
+}
+
 function calculateCodeSimilarity(a: string | null | undefined, b: string | null | undefined): number {
   const codeA = normalizeCodeText(a);
   const codeB = normalizeCodeText(b);
 
   if (!codeA || !codeB) return 0;
   if (codeA === codeB) return 1;
-
-  // Một mã chứa mã kia: EH2 vs EH2TI, E9838 vs E9838XA
   if (codeA.includes(codeB) || codeB.includes(codeA)) return 0.93;
 
-  // So phần số chính: 0241 vs 241, E5382 vs 5382
   const digitsA = (codeA.match(/\d+/g) || []).join('');
   const digitsB = (codeB.match(/\d+/g) || []).join('');
   if (digitsA && digitsB && digitsA === digitsB) return 0.9;
@@ -111,7 +250,7 @@ function isFieldDifferent(field: CompareField, baseItem: LineItem, matchedItem: 
     case 'itemCode':
       return normalizeText(baseItem.itemCode) !== normalizeText(matchedItem.itemCode);
     case 'unit':
-      return normalizeText(baseItem.unit) !== normalizeText(matchedItem.unit);
+      return !isEquivalentUnit(baseItem.unit, matchedItem.unit);
     case 'quantity':
       return baseItem.quantity !== matchedItem.quantity;
     case 'unitPrice':
@@ -252,14 +391,30 @@ export async function generateReport(
         const fuzzyScore = calculateNameSimilarity(baseItem.itemName, otherItem.itemName);
         const nameScore = Math.max(semanticScore, fuzzyScore);
 
-        let codeScore = calculateCodeSimilarity(baseItem.itemCode, otherItem.itemCode);
+        const basePrimaryCode = getPrimaryProductCode(baseItem);
+        const otherPrimaryCode = getPrimaryProductCode(otherItem);
+        const primaryCodeScore = calculateProductCodeSimilarity(basePrimaryCode, otherPrimaryCode);
+        const rawCodeScore = calculateCodeSimilarity(baseItem.itemCode, otherItem.itemCode);
 
-        let finalScore = (nameScore * 0.85) + (codeScore * 0.15);
+        let codeScore = 0;
+        if (basePrimaryCode && otherPrimaryCode) {
+          codeScore = primaryCodeScore;
+        } else if (basePrimaryCode || otherPrimaryCode) {
+          codeScore = Math.max(primaryCodeScore, rawCodeScore * 0.25);
+        } else {
+          codeScore = rawCodeScore * 0.2;
+        }
 
-        if (codeScore >= 1) {
-          finalScore = Math.max(finalScore, 0.95);
-        } else if (codeScore >= 0.9) {
-          finalScore = Math.max(finalScore, 0.85);
+        let finalScore = (nameScore * 0.86) + (codeScore * 0.14);
+
+        if (primaryCodeScore >= 0.95 && nameScore >= 0.78) {
+          finalScore = Math.max(finalScore, 0.92);
+        } else if (primaryCodeScore >= 0.9 && nameScore >= 0.85) {
+          finalScore = Math.max(finalScore, 0.9);
+        }
+
+        if (hasImportantTokenConflict(baseItem.itemName, otherItem.itemName)) {
+          finalScore = Math.min(finalScore, 0.65);
         }
 
         // Add small tie-breakers for exact numbers so it distributes better
@@ -333,7 +488,14 @@ export async function generateReport(
         const discrepancies: string[] = [];
 
         if (bestMatch && highestScore >= 0.75) {
-          if (highestScore >= 0.85) {
+          const basePrimaryCode = getPrimaryProductCode(baseItem);
+          const otherPrimaryCode = getPrimaryProductCode(bestMatch);
+          const itemCodeSimilarity = calculateCodeSimilarity(baseItem.itemCode, bestMatch.itemCode);
+          const itemNameSimilarity = calculateNameSimilarity(baseItem.itemName, bestMatch.itemName);
+          const productCodeMatch = basePrimaryCode && otherPrimaryCode && normalizeCodeText(basePrimaryCode) === normalizeCodeText(otherPrimaryCode);
+          const importantConflict = hasImportantTokenConflict(baseItem.itemName, bestMatch.itemName);
+
+          if (highestScore >= 0.85 && !importantConflict) {
             status = 'MATCH';
           } else {
             status = 'UNCERTAIN';
@@ -341,25 +503,22 @@ export async function generateReport(
           }
 
           if (activeCompareFields.includes('itemCode')) {
-            const itemCodeSimilarity = calculateCodeSimilarity(baseItem.itemCode, bestMatch.itemCode);
-            const itemNameSimilarity = calculateNameSimilarity(baseItem.itemName, bestMatch.itemName);
-
-            const shouldTreatCodeAsMatch =
-              itemCodeSimilarity >= 0.8 ||
-              (itemNameSimilarity >= 0.9 && itemCodeSimilarity >= 0.6);
-
-            if (!shouldTreatCodeAsMatch) {
+            if (basePrimaryCode && otherPrimaryCode) {
+              if (!productCodeMatch) {
+                status = status === 'UNCERTAIN' ? 'UNCERTAIN' : 'MISMATCH';
+                discrepancies.push(`Mã mặt hàng khác: Gốc (${basePrimaryCode}) vs Đối chiếu (${otherPrimaryCode})`);
+              } else if (itemCodeSimilarity < 0.8 && (isLikelyInternalNumericCode(baseItem.itemCode) || isLikelyInternalNumericCode(bestMatch.itemCode))) {
+                discrepancies.push('Mã gốc là mã nội bộ, mã đối chiếu là mã model; xác định là cùng sản phẩm.');
+              }
+            } else if (!productCodeMatch && itemCodeSimilarity < 0.6 && itemNameSimilarity < 0.85) {
               status = status === 'UNCERTAIN' ? 'UNCERTAIN' : 'MISMATCH';
               discrepancies.push(`Mã hàng lệch: Gốc (${baseItem.itemCode}) vs Đối chiếu (${bestMatch.itemCode})`);
             }
           }
 
-          if (activeCompareFields.includes('itemName')) {
-            const itemNameSimilarity = calculateNameSimilarity(baseItem.itemName, bestMatch.itemName);
-            if (itemNameSimilarity < 0.8) {
-              status = status === 'UNCERTAIN' ? 'UNCERTAIN' : 'MISMATCH';
-              discrepancies.push(`Tên hàng lệch: Gốc (${baseItem.itemName}) vs Đối chiếu (${bestMatch.itemName})`);
-            }
+          if (activeCompareFields.includes('itemName') && itemNameSimilarity < 0.75 && !productCodeMatch) {
+            status = status === 'UNCERTAIN' ? 'UNCERTAIN' : 'MISMATCH';
+            discrepancies.push(`Tên hàng lệch: Gốc (${baseItem.itemName}) vs Đối chiếu (${bestMatch.itemName})`);
           }
 
           if (activeCompareFields.includes('unit') && isFieldDifferent('unit', baseItem, bestMatch)) {
