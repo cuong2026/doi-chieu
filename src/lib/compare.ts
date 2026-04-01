@@ -27,21 +27,53 @@ function stripVietnameseAccents(value: string): string {
 }
 
 function normalizeUnitSmart(value: string | null | undefined): string {
-  const text = stripVietnameseAccents(String(value || '')).toLowerCase().trim();
-  const normalized = text.replace(/\s+/g, ' ');
+  const raw = String(value || '');
+  let text = stripVietnameseAccents(raw).toLowerCase().trim();
+  text = text.replace(/[\s\.]+/g, ' ');
+  text = text.replace(/[^a-z0-9 ]+/g, '');
+  const normalized = text.replace(/\s+/g, ' ').trim();
   const unitMap: Record<string, string> = {
-    cai: 'cai', cái: 'cai', bo: 'bo', bộ: 'bo', lo: 'lo', lọ: 'lo', hop: 'hop', hộp: 'hop',
-    vien: 'vien', viên: 'vien', tap: 'tap', tập: 'tap', tui: 'tui', túi: 'tui', vi: 'vi', vỉ: 'vi'
+    cai: 'cai', cái: 'cai', caí: 'cai',
+    bo: 'bo', bộ: 'bo',
+    lo: 'lo', lọ: 'lo',
+    hop: 'hop', hộp: 'hop',
+    vien: 'vien', viên: 'vien',
+    tap: 'tap', tập: 'tap',
+    tui: 'tui', túi: 'tui',
+    vi: 'vi', vỉ: 'vi'
   };
   return unitMap[normalized] ?? normalized;
 }
 
-function isEquivalentUnit(a: string | null | undefined, b: string | null | undefined): boolean {
+function isHardEquivalentUnit(a: string | null | undefined, b: string | null | undefined): boolean {
   const normA = normalizeUnitSmart(a);
   const normB = normalizeUnitSmart(b);
   if (!normA && !normB) return true;
   if (!normA || !normB) return false;
   return normA === normB;
+}
+
+function isSoftEquivalentUnit(a: string | null | undefined, b: string | null | undefined, baseItem: LineItem, matchedItem: LineItem): boolean {
+  if (isHardEquivalentUnit(a, b)) return true;
+  const normA = normalizeUnitSmart(a);
+  const normB = normalizeUnitSmart(b);
+  if (normA === normB) return true;
+
+  const codeCompatible = areProductCodesCompatible(baseItem, matchedItem);
+  const nameSimilarity = calculateNameSimilarity(baseItem.itemName, matchedItem.itemName);
+  const strongName = nameSimilarity >= 0.88;
+  const stickyContext = isStickyNoteProduct(baseItem.itemName) || isStickyNoteProduct(matchedItem.itemName);
+
+  if (!codeCompatible || !strongName) return false;
+  if (stickyContext && ((normA === 'tap' && normB === 'cai') || (normA === 'cai' && normB === 'tap'))) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldIgnoreUnitDifference(baseItem: LineItem, matchedItem: LineItem): boolean {
+  return isSoftEquivalentUnit(baseItem.unit, matchedItem.unit, baseItem, matchedItem);
 }
 
 function normalizeProductNameSmart(value: string | null | undefined): string {
@@ -224,18 +256,6 @@ function isStickyNoteProduct(value: string | null | undefined): boolean {
   return /giay nho|sticky|memo note|memo notes|note pad|giay ghi chu|block giay|block giay nho|giay note|giay ghi chu/.test(normalized);
 }
 
-function isContextEquivalentUnit(unitA: string | null | undefined, unitB: string | null | undefined, baseName: string, matchedName: string): boolean {
-  if (isEquivalentUnit(unitA, unitB)) return true;
-  const strongName = calculateNameSimilarity(baseName, matchedName) >= 0.88;
-  const stickyContext = isStickyNoteProduct(baseName) || isStickyNoteProduct(matchedName);
-  const normA = normalizeUnitSmart(unitA);
-  const normB = normalizeUnitSmart(unitB);
-  if (stickyContext && strongName && ((normA === 'tap' && normB === 'cai') || (normA === 'cai' && normB === 'tap'))) {
-    return true;
-  }
-  return false;
-}
-
 function getImportantTokenCategories(text: string): Record<string, Set<string>> {
   const normalized = normalizeProductNameSmart(text);
   const categories: Record<string, Set<string>> = {
@@ -335,7 +355,7 @@ function isFieldDifferent(field: CompareField, baseItem: LineItem, matchedItem: 
     case 'itemCode':
       return normalizeText(baseItem.itemCode) !== normalizeText(matchedItem.itemCode);
     case 'unit':
-      return !isContextEquivalentUnit(baseItem.unit, matchedItem.unit, baseItem.itemName, matchedItem.itemName);
+      return !shouldIgnoreUnitDifference(baseItem, matchedItem);
     case 'quantity':
       return baseItem.quantity !== matchedItem.quantity;
     case 'unitPrice':
@@ -579,7 +599,7 @@ export async function generateReport(
           const itemNameSimilarity = calculateNameSimilarity(baseItem.itemName, bestMatch.itemName);
           const codeCompatible = areProductCodesCompatible(baseItem, bestMatch);
           const importantConflict = hasImportantTokenConflict(baseItem.itemName, bestMatch.itemName);
-          const contextUnitEquivalent = isContextEquivalentUnit(baseItem.unit, bestMatch.unit, baseItem.itemName, bestMatch.itemName);
+          const contextUnitEquivalent = shouldIgnoreUnitDifference(baseItem, bestMatch);
           const strongName = itemNameSimilarity >= 0.88;
           const primaryCodeLabel = basePrimaryCode || otherPrimaryCode || '';
 
@@ -607,7 +627,7 @@ export async function generateReport(
             discrepancies.push(`Tên hàng lệch: Gốc (${baseItem.itemName}) vs Đối chiếu (${bestMatch.itemName})`);
           }
 
-          if (activeCompareFields.includes('unit') && isFieldDifferent('unit', baseItem, bestMatch)) {
+          if (activeCompareFields.includes('unit') && !shouldIgnoreUnitDifference(baseItem, bestMatch)) {
             status = status === 'UNCERTAIN' ? 'UNCERTAIN' : 'MISMATCH';
             discrepancies.push(`Đơn vị tính lệch: Gốc (${baseItem.unit ?? 'Trống'}) vs Đối chiếu (${bestMatch.unit ?? 'Trống'})`);
           }
