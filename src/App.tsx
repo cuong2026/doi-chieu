@@ -50,6 +50,7 @@ export default function App() {
   const [selectedBaseFileName, setSelectedBaseFileName] = useState<string | null>(null);
   const [aiProvider, setAiProvider] = useState<AIProvider>('openai');
   const [compareFields, setCompareFields] = useState<CompareField[]>(DEFAULT_COMPARE_FIELDS);
+  const [discrepancyFilter, setDiscrepancyFilter] = useState<'itemName' | 'unit' | 'quantity' | 'unitPrice' | 'totalPrice' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -569,17 +570,34 @@ export default function App() {
   }
 
   const filteredResults = reportData?.results.filter(result => {
-    if (statusFilters.length === 4) return true;
-    if (statusFilters.length === 0) return false;
+    // 1. Status Filter
+    let matchesStatus = true;
+    if (statusFilters.length === 0) {
+      matchesStatus = false;
+    } else if (statusFilters.length < 4) {
+      const statuses = Object.values(result.comparisons).map((c: any) => c.status);
+      let overallStatus: MatchStatus = 'MATCH';
+      if (statuses.includes('MISSING')) overallStatus = 'MISSING';
+      else if (statuses.includes('MISMATCH')) overallStatus = 'MISMATCH';
+      else if (statuses.includes('UNCERTAIN')) overallStatus = 'UNCERTAIN';
+      matchesStatus = statusFilters.includes(overallStatus);
+    }
+    
+    // 2. Discrepancy Field Filter
+    let matchesDiscrepancy = true;
+    if (discrepancyFilter) {
+      matchesDiscrepancy = Object.values(result.comparisons).some((comp: any) => {
+        if (!comp.matchedItem) return false;
+        if (discrepancyFilter === 'unit') return comp.matchedItem.unit !== result.baseItem.unit;
+        if (discrepancyFilter === 'quantity') return comp.matchedItem.quantity !== result.baseItem.quantity;
+        if (discrepancyFilter === 'unitPrice') return comp.matchedItem.unitPrice !== result.baseItem.unitPrice;
+        if (discrepancyFilter === 'totalPrice') return comp.matchedItem.totalPrice !== result.baseItem.totalPrice;
+        if (discrepancyFilter === 'itemName') return comp.matchedItem.itemName !== result.baseItem.itemName;
+        return false;
+      });
+    }
 
-    const statuses = Object.values(result.comparisons).map((c: any) => c.status);
-
-    let overallStatus: MatchStatus = 'MATCH';
-    if (statuses.includes('MISSING')) overallStatus = 'MISSING';
-    else if (statuses.includes('MISMATCH')) overallStatus = 'MISMATCH';
-    else if (statuses.includes('UNCERTAIN')) overallStatus = 'UNCERTAIN';
-
-    return statusFilters.includes(overallStatus);
+    return matchesStatus && matchesDiscrepancy;
   }) || [];
 
   return (
@@ -826,15 +844,53 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                <span className="text-sm font-medium text-slate-500 flex items-center gap-1 mr-2">
-                  <Filter className="w-4 h-4" /> Lọc kết quả:
-                </span>
-                <button onClick={toggleAllFilters} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.length === 4 ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Tất cả ({reportData.results.length})</button>
-                <button onClick={() => toggleFilter('MISMATCH')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('MISMATCH') ? 'bg-rose-600 text-white' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>Lệch ({statusCounts.MISMATCH})</button>
-                <button onClick={() => toggleFilter('MISSING')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('MISSING') ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Thiếu ({statusCounts.MISSING})</button>
-                <button onClick={() => toggleFilter('UNCERTAIN')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('UNCERTAIN') ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>Nghi ngờ ({statusCounts.UNCERTAIN})</button>
-                <button onClick={() => toggleFilter('MATCH')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('MATCH') ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>Khớp hoàn toàn ({statusCounts.MATCH})</button>
+              <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-slate-500 flex items-center gap-1 mr-2">
+                    <Filter className="w-4 h-4" /> Lọc trạng thái:
+                  </span>
+                  <button onClick={toggleAllFilters} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.length === 4 ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Tất cả ({reportData.results.length})</button>
+                  <button onClick={() => toggleFilter('MISMATCH')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('MISMATCH') ? 'bg-rose-600 text-white' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>Lệch ({statusCounts.MISMATCH})</button>
+                  <button onClick={() => toggleFilter('MISSING')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('MISSING') ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Thiếu ({statusCounts.MISSING})</button>
+                  <button onClick={() => toggleFilter('UNCERTAIN')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('UNCERTAIN') ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>Nghi ngờ ({statusCounts.UNCERTAIN})</button>
+                  <button onClick={() => toggleFilter('MATCH')} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${statusFilters.includes('MATCH') ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>Khớp hoàn toàn ({statusCounts.MATCH})</button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100">
+                  <span className="text-sm font-medium text-slate-500 flex items-center gap-1 mr-2">
+                    Lọc chi tiết lệch:
+                  </span>
+                  <button 
+                    onClick={() => setDiscrepancyFilter(discrepancyFilter === 'itemName' ? null : 'itemName')} 
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${discrepancyFilter === 'itemName' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                  >
+                    Tên hàng
+                  </button>
+                  <button 
+                    onClick={() => setDiscrepancyFilter(discrepancyFilter === 'totalPrice' ? null : 'totalPrice')} 
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${discrepancyFilter === 'totalPrice' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                  >
+                    Thành tiền
+                  </button>
+                  <button 
+                    onClick={() => setDiscrepancyFilter(discrepancyFilter === 'unitPrice' ? null : 'unitPrice')} 
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${discrepancyFilter === 'unitPrice' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                  >
+                    Đơn giá
+                  </button>
+                  <button 
+                    onClick={() => setDiscrepancyFilter(discrepancyFilter === 'quantity' ? null : 'quantity')} 
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${discrepancyFilter === 'quantity' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                  >
+                    Số lượng
+                  </button>
+                  <button 
+                    onClick={() => setDiscrepancyFilter(discrepancyFilter === 'unit' ? null : 'unit')} 
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${discrepancyFilter === 'unit' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                  >
+                    Đơn vị tính
+                  </button>
+                </div>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
