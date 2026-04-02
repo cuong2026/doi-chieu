@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { processDocument, processDocuments } from './lib/gemini';
 import { processDocumentOpenAI, processDocumentsOpenAI } from './lib/openai';
 import { generateReport } from './lib/compare';
-import { DocumentData, ReportData, MatchStatus, AIProvider, CompareField, LineItem } from './types';
+import { DocumentData, ReportData, MatchStatus, AIProvider, CompareField, LineItem, ItemCodeLocation } from './types';
 import { splitFileWithMetadata } from './lib/fileSplitter';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -51,6 +51,7 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState<AIProvider>('openai');
   const [compareFields, setCompareFields] = useState<CompareField[]>(DEFAULT_COMPARE_FIELDS);
   const [discrepancyFilter, setDiscrepancyFilter] = useState<'itemName' | 'unit' | 'quantity' | 'unitPrice' | 'totalPrice' | null>(null);
+  const [itemCodeLocations, setItemCodeLocations] = useState<Record<string, ItemCodeLocation>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,9 +148,10 @@ export default function App() {
           setProcessingStatus(chunkStatus);
           console.log(`[DEBUG APP] ${chunkStatus}`);
 
+          const fileItemCodeLocation = itemCodeLocations[originalFile.name] || 'auto';
           const docData = aiProvider === 'openai'
-            ? await processDocumentOpenAI(chunk, originalFile.name)
-            : await processDocument(chunk, originalFile.name);
+            ? await processDocumentOpenAI(chunk, originalFile.name, fileItemCodeLocation)
+            : await processDocument(chunk, originalFile.name, fileItemCodeLocation);
           chunkResults.push(docData);
         };
 
@@ -168,9 +170,10 @@ export default function App() {
             setProcessingStatus(chunkStatus);
             console.log(`[DEBUG APP] ${chunkStatus}`);
 
+            const fileItemCodeLocation = itemCodeLocations[originalFile.name] || 'auto';
             const docData = aiProvider === 'openai'
-              ? await processDocumentsOpenAI(batch, originalFile.name)
-              : await processDocuments(batch, originalFile.name);
+              ? await processDocumentsOpenAI(batch, originalFile.name, fileItemCodeLocation)
+              : await processDocuments(batch, originalFile.name, fileItemCodeLocation);
             chunkResults.push(docData);
           }
         } else {
@@ -227,6 +230,7 @@ export default function App() {
     setStatusFilters(['MATCH', 'MISMATCH', 'MISSING', 'UNCERTAIN']);
     setSelectedBaseFileName(null);
     setCompareFields(DEFAULT_COMPARE_FIELDS);
+    setItemCodeLocations({});
     setAppState('UPLOAD');
   };
 
@@ -666,12 +670,29 @@ export default function App() {
                       <span>Đã chọn {files.length} file</span>
                       <button onClick={() => { setFiles([]); setSelectedBaseFileName(null); }} className="text-sm text-rose-600 hover:text-rose-700">Xóa tất cả</button>
                     </h4>
-                    <ul className="space-y-2 mb-4">
+                    <ul className="space-y-3 mb-4">
                       {files.map((f, i) => (
-                        <li key={i} className="flex items-center gap-3 text-sm text-slate-600 bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
-                          <FileImage className="w-4 h-4 text-blue-500" />
-                          <span className="truncate">{f.name}</span>
-                          <span className="text-xs text-slate-400 ml-auto">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                        <li key={i} className="flex flex-col gap-2 text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                          <div className="flex items-center gap-3">
+                            <FileImage className="w-4 h-4 text-blue-500 shrink-0" />
+                            <span className="truncate flex-1 font-medium text-slate-800">{f.name}</span>
+                            <span className="text-xs text-slate-400 shrink-0">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                          </div>
+                          <div className="mt-1 bg-slate-50 p-2 rounded border border-slate-100">
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">
+                              Khu vực trích xuất mã sản phẩm:
+                            </label>
+                            <select
+                              value={itemCodeLocations[f.name] || 'auto'}
+                              onChange={(e) => setItemCodeLocations(prev => ({ ...prev, [f.name]: e.target.value as ItemCodeLocation }))}
+                              className="block w-full rounded-md border-slate-300 border py-1.5 px-2 text-xs focus:border-blue-500 focus:ring-blue-500 bg-white font-medium text-slate-700"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="auto">Tự động (Ưu tiên cột mã riêng, nếu không có tìm trong tên)</option>
+                              <option value="separate_column">Chỉ ở cột mã riêng (Bỏ qua nếu mã nằm trong tên)</option>
+                              <option value="in_name">Nằm lẫn trong tên sản phẩm</option>
+                            </select>
+                          </div>
                         </li>
                       ))}
                     </ul>

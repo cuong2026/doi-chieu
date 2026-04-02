@@ -1,4 +1,5 @@
 export type AIProvider = 'gemini' | 'openai';
+export type ItemCodeLocation = 'auto' | 'separate_column' | 'in_name';
 
 export type CompareField = 'itemName' | 'itemCode' | 'unit' | 'quantity' | 'unitPrice' | 'totalPrice';
 
