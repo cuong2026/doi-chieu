@@ -133,7 +133,7 @@ export async function processDocumentsOpenAI(files: File[], logicalFileName: str
   try {
     const openai = getOpenAI();
     response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages: [
         {
           role: "user",
