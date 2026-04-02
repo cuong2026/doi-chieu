@@ -101,7 +101,7 @@ export default function App() {
       setError('Vui lòng chọn ít nhất 1 trường thông tin để đối chiếu.');
       return;
     }
-    
+
     console.log(`[DEBUG APP] Bắt đầu xử lý ${files.length} files...`);
     setAppState('PROCESSING');
     setError(null);
@@ -112,7 +112,7 @@ export default function App() {
         const originalFile = files[i];
         console.log(`[DEBUG APP] Đang kiểm tra và cắt file ${i + 1}/${files.length}: ${originalFile.name}`);
         setProcessingStatus(`Đang kiểm tra file ${i + 1}/${files.length}: ${originalFile.name}...`);
-        
+
         // Split file if needed (PDF scan: render theo từng trang ảnh để OCR chắc chắn đủ trang)
         const splitResult = await splitFileWithMetadata(originalFile, 10, 500);
         const chunks = splitResult.chunks;
@@ -193,7 +193,7 @@ export default function App() {
             date: chunkResults[0].date,
             lineItems: chunkResults.flatMap(res => res.lineItems)
           };
-          
+
           // Re-index line items after merging to ensure unique IDs and correct originalIndex
           mergedDoc.lineItems = mergedDoc.lineItems.map((item, idx) => ({
             ...item,
@@ -209,7 +209,7 @@ export default function App() {
       setProcessingStatus('Đang phân tích và đối chiếu dữ liệu (Ngữ nghĩa)...');
       const report = await generateReport(extractedDocs, selectedBaseFileName, aiProvider, compareFields);
       console.log(`[DEBUG APP] Báo cáo đối chiếu:`, report);
-      
+
       setReportData(report);
       setAppState('RESULTS');
     } catch (err: any) {
@@ -249,7 +249,7 @@ export default function App() {
 
   const exportExcel = async () => {
     if (!reportData) return;
-    
+
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Báo cáo đối chiếu');
 
@@ -281,7 +281,7 @@ export default function App() {
     });
 
     const headerRow = worksheet.addRow(headers);
-    
+
     // Style header
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -302,7 +302,7 @@ export default function App() {
     // Rows
     reportData.results.forEach(result => {
       const rowData: any[] = [];
-      
+
       // Add base item fields
       reportData.compareFields.forEach(field => {
         rowData.push(getFieldValue(result.baseItem, field));
@@ -318,12 +318,12 @@ export default function App() {
           case 'UNCERTAIN': statusText = 'Nghi ngờ'; break;
         }
         rowData.push(statusText);
-        
+
         // Add matched item fields
         reportData.compareFields.forEach(field => {
           rowData.push(comp.matchedItem ? getFieldValue(comp.matchedItem, field) : '');
         });
-        
+
         rowData.push(comp.discrepancies.join('; '));
       });
 
@@ -359,11 +359,11 @@ export default function App() {
       reportData.otherFiles.forEach((f, index) => {
         const comp = result.comparisons[f.fileName];
         const statusColIndex = baseColCount + 1 + index * (baseColCount + 2); // 1-indexed
-        
+
         // Status column
         const statusCell = row.getCell(statusColIndex);
         statusCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-        
+
         if (comp.status === 'MATCH') {
           statusCell.font = { color: { argb: 'FF00B050' }, bold: true }; // Green
         } else if (comp.status === 'MISMATCH') {
@@ -372,9 +372,9 @@ export default function App() {
         } else if (comp.status === 'MISSING') {
           statusCell.font = { color: { argb: 'FF7B7B7B' }, bold: true }; // Gray
           statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }; // Light Gray BG
-          
+
           // Highlight the whole block for missing item
-          for(let i = 1; i <= baseColCount + 1; i++) {
+          for (let i = 1; i <= baseColCount + 1; i++) {
             row.getCell(statusColIndex + i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
           }
         } else if (comp.status === 'UNCERTAIN') {
@@ -391,33 +391,33 @@ export default function App() {
           // Check specific fields if they mismatch and are selected
           if (comp.matchedItem) {
             if (reportData.compareFields.includes('itemName') && comp.matchedItem.itemName !== result.baseItem.itemName) {
-               const colIdx = getFieldColIndexInOther(index, 'itemName');
-               row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
-               row.getCell(colIdx).font = { color: { argb: fontColor } };
-               if (isMismatch) baseNameHighlight = 'RED';
-               else if (!baseNameHighlight) baseNameHighlight = 'YELLOW';
+              const colIdx = getFieldColIndexInOther(index, 'itemName');
+              row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
+              row.getCell(colIdx).font = { color: { argb: fontColor } };
+              if (isMismatch) baseNameHighlight = 'RED';
+              else if (!baseNameHighlight) baseNameHighlight = 'YELLOW';
             }
             if (reportData.compareFields.includes('itemCode') && comp.matchedItem.itemCode !== result.baseItem.itemCode) {
-               const colIdx = getFieldColIndexInOther(index, 'itemCode');
-               row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
-               row.getCell(colIdx).font = { color: { argb: fontColor } };
+              const colIdx = getFieldColIndexInOther(index, 'itemCode');
+              row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
+              row.getCell(colIdx).font = { color: { argb: fontColor } };
             }
             if (reportData.compareFields.includes('quantity') && comp.matchedItem.quantity !== result.baseItem.quantity) {
-               const colIdx = getFieldColIndexInOther(index, 'quantity');
-               row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
-               row.getCell(colIdx).font = { color: { argb: fontColor } };
-               if (isMismatch) baseQuantityHighlight = 'RED';
-               else if (!baseQuantityHighlight) baseQuantityHighlight = 'YELLOW';
+              const colIdx = getFieldColIndexInOther(index, 'quantity');
+              row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
+              row.getCell(colIdx).font = { color: { argb: fontColor } };
+              if (isMismatch) baseQuantityHighlight = 'RED';
+              else if (!baseQuantityHighlight) baseQuantityHighlight = 'YELLOW';
             }
             if (reportData.compareFields.includes('unitPrice') && comp.matchedItem.unitPrice !== result.baseItem.unitPrice) {
-               const colIdx = getFieldColIndexInOther(index, 'unitPrice');
-               row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
-               row.getCell(colIdx).font = { color: { argb: fontColor } };
-               if (isMismatch) basePriceHighlight = 'RED';
-               else if (!basePriceHighlight) basePriceHighlight = 'YELLOW';
+              const colIdx = getFieldColIndexInOther(index, 'unitPrice');
+              row.getCell(colIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: highlightColor } };
+              row.getCell(colIdx).font = { color: { argb: fontColor } };
+              if (isMismatch) basePriceHighlight = 'RED';
+              else if (!basePriceHighlight) basePriceHighlight = 'YELLOW';
             }
           }
-          
+
           // Discrepancies cell
           const discrepanciesColIdx = statusColIndex + baseColCount + 1;
           row.getCell(discrepanciesColIdx).font = { color: { argb: fontColor } };
@@ -426,16 +426,16 @@ export default function App() {
 
       // Apply highlights to base columns
       const applyBaseHighlight = (field: CompareField, highlightType: 'RED' | 'YELLOW' | null) => {
-         if (reportData.compareFields.includes(field)) {
-           const colIndex = getBaseFieldColIndex(field);
-           if (highlightType === 'RED') {
-             row.getCell(colIndex).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
-             row.getCell(colIndex).font = { color: { argb: 'FFC00000' } };
-           } else if (highlightType === 'YELLOW') {
-             row.getCell(colIndex).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
-             row.getCell(colIndex).font = { color: { argb: 'FF9C6500' } };
-           }
-         }
+        if (reportData.compareFields.includes(field)) {
+          const colIndex = getBaseFieldColIndex(field);
+          if (highlightType === 'RED') {
+            row.getCell(colIndex).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+            row.getCell(colIndex).font = { color: { argb: 'FFC00000' } };
+          } else if (highlightType === 'YELLOW') {
+            row.getCell(colIndex).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
+            row.getCell(colIndex).font = { color: { argb: 'FF9C6500' } };
+          }
+        }
       };
 
       applyBaseHighlight('itemName', baseNameHighlight);
@@ -464,7 +464,7 @@ export default function App() {
 
   const copyForGoogleSheets = () => {
     if (!reportData) return;
-    
+
     // Helper function to get field value from item
     const getFieldValue = (item: LineItem, field: CompareField): any => {
       switch (field) {
@@ -495,7 +495,7 @@ export default function App() {
     // Rows
     const rows = reportData.results.map(result => {
       const row: any[] = [];
-      
+
       // Add base item fields
       reportData.compareFields.forEach(field => {
         row.push(getFieldValue(result.baseItem, field));
@@ -504,12 +504,12 @@ export default function App() {
       reportData.otherFiles.forEach(f => {
         const comp = result.comparisons[f.fileName];
         row.push(comp.status);
-        
+
         // Add matched item fields
         reportData.compareFields.forEach(field => {
           row.push(comp.matchedItem ? getFieldValue(comp.matchedItem, field) : '');
         });
-        
+
         row.push(comp.discrepancies.join('; '));
       });
 
@@ -521,7 +521,7 @@ export default function App() {
     });
 
     const tsvContent = [headers.join('\t'), ...rows].join('\n');
-    
+
     navigator.clipboard.writeText(tsvContent).then(() => {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 3000);
@@ -563,7 +563,7 @@ export default function App() {
       if (statuses.includes('MISSING')) overallStatus = 'MISSING';
       else if (statuses.includes('MISMATCH')) overallStatus = 'MISMATCH';
       else if (statuses.includes('UNCERTAIN')) overallStatus = 'UNCERTAIN';
-      
+
       statusCounts[overallStatus]++;
     });
   }
@@ -573,7 +573,7 @@ export default function App() {
     if (statusFilters.length === 0) return false;
 
     const statuses = Object.values(result.comparisons).map((c: any) => c.status);
-    
+
     let overallStatus: MatchStatus = 'MATCH';
     if (statuses.includes('MISSING')) overallStatus = 'MISSING';
     else if (statuses.includes('MISMATCH')) overallStatus = 'MISMATCH';
@@ -593,7 +593,7 @@ export default function App() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Đối chiếu chứng từ tự động</h1>
           </div>
           {appState === 'RESULTS' && (
-            <button 
+            <button
               onClick={resetApp}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
             >
@@ -607,7 +607,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <AnimatePresence mode="wait">
           {appState === 'UPLOAD' && (
-            <motion.div 
+            <motion.div
               key="upload"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -617,22 +617,22 @@ export default function App() {
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold text-slate-900 mb-4">Đối chiếu chứng từ tự động</h2>
                 <p className="text-slate-600 text-lg">
-                  Tải lên 2 đến 4 chứng từ của cùng một đơn hàng (Đơn đặt hàng, Phiếu xuất kho, Hóa đơn...). 
+                  Tải lên 2 đến 4 chứng từ của cùng một đơn hàng (Đơn đặt hàng, Phiếu xuất kho, Hóa đơn...).
                   Hệ thống sẽ tự động nhận diện và tìm ra các điểm sai lệch.
                 </p>
               </div>
 
-              <div 
+              <div
                 className="border-2 border-dashed border-slate-300 rounded-2xl bg-white p-12 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input 
-                  type="file" 
-                  multiple 
-                  accept="image/*,application/pdf" 
-                  className="hidden" 
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf"
+                  className="hidden"
                   ref={fileInputRef}
                   onChange={handleFileSelect}
                 />
@@ -641,7 +641,7 @@ export default function App() {
                 </div>
                 <h3 className="text-xl font-semibold text-slate-900 mb-2">Kéo thả file vào đây</h3>
                 <p className="text-slate-500 mb-6">hoặc click để chọn file từ máy tính (Hỗ trợ PDF, JPG, PNG)</p>
-                
+
                 {files.length > 0 && (
                   <div className="mt-8 text-left bg-slate-50 rounded-xl p-4 border border-slate-200" onClick={(e) => e.stopPropagation()}>
                     <h4 className="font-medium text-slate-900 mb-3 flex items-center justify-between">
@@ -657,7 +657,7 @@ export default function App() {
                         </li>
                       ))}
                     </ul>
-                    
+
                     {files.length >= 2 && (
                       <div className="pt-4 border-t border-slate-200">
                         <label htmlFor="aiProviderSelect" className="block text-sm font-medium text-slate-700 mb-2 mt-4">
@@ -669,8 +669,8 @@ export default function App() {
                           onChange={(e) => setAiProvider(e.target.value as AIProvider)}
                           className="block w-full rounded-lg border-slate-300 border p-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 bg-white mb-4"
                         >
-                          <option value="gemini">Google Gemini (Mặc định)</option>
-                          <option value="openai">OpenAI (GPT-4o Mini)</option>
+                          <option value="gemini">Google Gemini (gemini-3.1-flash)</option>
+                          <option value="openai">OpenAI (gpt-5.4-mini)</option>
                         </select>
 
                         <label htmlFor="baseFileSelect" className="block text-sm font-medium text-slate-700 mb-2">
@@ -713,17 +713,15 @@ export default function App() {
                                   key={option.key}
                                   type="button"
                                   onClick={() => toggleCompareField(option.key)}
-                                  className={`text-left rounded-xl border p-3 transition-all ${
-                                    isSelected
+                                  className={`text-left rounded-xl border p-3 transition-all ${isSelected
                                       ? 'border-blue-500 bg-blue-50 shadow-sm'
                                       : 'border-slate-200 bg-white hover:border-slate-300'
-                                  }`}
+                                    }`}
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div className="font-medium text-slate-900">{option.label}</div>
-                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                                      isSelected ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
-                                    }`}>
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
+                                      }`}>
                                       {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
                                     </div>
                                   </div>
@@ -751,7 +749,7 @@ export default function App() {
               )}
 
               <div className="mt-8 flex justify-center">
-                <button 
+                <button
                   onClick={handleProcess}
                   disabled={files.length < 2}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-8 py-3 rounded-xl font-medium text-lg flex items-center gap-2 transition-colors shadow-sm"
@@ -764,7 +762,7 @@ export default function App() {
           )}
 
           {appState === 'PROCESSING' && (
-            <motion.div 
+            <motion.div
               key="processing"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -782,7 +780,7 @@ export default function App() {
           )}
 
           {appState === 'RESULTS' && reportData && (
-            <motion.div 
+            <motion.div
               key="results"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -796,14 +794,14 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button 
+                  <button
                     onClick={copyForGoogleSheets}
                     className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm relative"
                   >
                     {copySuccess ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                     {copySuccess ? 'Đã copy!' : 'Copy cho Google Sheets'}
                   </button>
-                  <button 
+                  <button
                     onClick={exportExcel}
                     className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
                   >
@@ -898,7 +896,7 @@ export default function App() {
                               )}
                             </div>
                           </td>
-                          
+
                           {reportData.otherFiles.map((f, i) => {
                             const comp = result.comparisons[f.fileName];
                             return (
