@@ -452,9 +452,6 @@ export async function generateReport(
       const otherItem = other.file.lineItems[j];
       const otherEmb = other.embeddings[j];
 
-      let bestBaseIdx = -1;
-      let highestScore = -1;
-
       for (let i = 0; i < baseFile.lineItems.length; i++) {
         const baseItem = baseFile.lineItems[i];
         const baseEmb = baseEmbeddings[i];
@@ -495,18 +492,27 @@ export async function generateReport(
         }
 
         scoreMatrix.push({ baseIdx: i, otherIdx: j, score: finalScore });
-
-        if (finalScore > highestScore) {
-          highestScore = finalScore;
-          bestBaseIdx = i;
-        }
       }
+    }
 
-      if (bestBaseIdx !== -1 && highestScore >= 0.40) {
-        allAssignments[bestBaseIdx][other.file.fileName].push({
+    // Sort globally by score descending to get absolute best matches globally first
+    scoreMatrix.sort((a, b) => b.score - a.score);
+
+    const globallyAssignedBaseIdxs = new Set<number>();
+    
+    // Strict 1-to-1 Assignment (Stable Marriage approach)
+    for (const match of scoreMatrix) {
+      if (match.score < 0.40) continue; // Skip weak matches
+
+      const otherItem = other.file.lineItems[match.otherIdx];
+      
+      // If neither the base item nor the other item has been assigned yet, bind them!
+      if (!globallyAssignedBaseIdxs.has(match.baseIdx) && !globallyAssignedOtherItems.has(otherItem)) {
+        allAssignments[match.baseIdx][other.file.fileName].push({
           item: otherItem,
-          score: Math.min(1, highestScore)
+          score: Math.min(1, match.score)
         });
+        globallyAssignedBaseIdxs.add(match.baseIdx);
         globallyAssignedOtherItems.add(otherItem);
       }
     }
