@@ -350,35 +350,53 @@ export async function generateReport(
     });
 
     const groupedItems: LineItem[] = [];
-    const itemMap = new Map<string, LineItem>();
 
     for (const item of validItems) {
       const codeKey = normalizeCodeText(item.itemCode);
       const nameKey = normalizeMatchText(item.itemName);
+      
+      let foundExisting = false;
 
-      // Group by both itemCode and itemName to prevent squashing variants that share a base code 
-      // but have different descriptors (e.g. Colors, sizes)
-      const key = codeKey ? `CODE-${codeKey}-NAME-${nameKey}` : `NAME-${nameKey}`;
+      for (const existing of groupedItems) {
+        const existingCodeKey = normalizeCodeText(existing.itemCode);
+        const existingNameKey = normalizeMatchText(existing.itemName);
 
-      if (itemMap.has(key)) {
-        const existing = itemMap.get(key)!;
-
-        // Sum quantities
-        if (item.quantity !== null) {
-          existing.quantity = (existing.quantity || 0) + item.quantity;
+        let codeMatch = false;
+        if (codeKey && existingCodeKey) {
+          codeMatch = (codeKey === existingCodeKey);
+        } else {
+          // If one or both lack a code, we consider it a potential match if names align highly
+          codeMatch = true;
         }
 
-        // Sum total prices
-        if (item.totalPrice !== null) {
-          existing.totalPrice = (existing.totalPrice || 0) + item.totalPrice;
-        }
+        if (codeMatch) {
+          const nameSim = calculateNameSimilarity(item.itemName, existing.itemName);
+          
+          if (nameSim >= 0.90 || nameKey === existingNameKey) {
+            foundExisting = true;
 
-        // Ensure unit and unitPrice stay populated if missing in first occurrence
-        if (!existing.unit && item.unit) existing.unit = item.unit;
-        if (existing.unitPrice === null && item.unitPrice !== null) existing.unitPrice = item.unitPrice;
-      } else {
-        itemMap.set(key, { ...item });
-        groupedItems.push(itemMap.get(key)!);
+            // Sum quantities
+            if (item.quantity !== null) {
+              existing.quantity = (existing.quantity || 0) + item.quantity;
+            }
+
+            // Sum total prices
+            if (item.totalPrice !== null) {
+              existing.totalPrice = (existing.totalPrice || 0) + item.totalPrice;
+            }
+
+            // Ensure unit and unitPrice stay populated if missing in first occurrence
+            if (!existing.unit && item.unit) existing.unit = item.unit;
+            if (existing.unitPrice === null && item.unitPrice !== null) existing.unitPrice = item.unitPrice;
+            if (!existing.itemCode && item.itemCode) existing.itemCode = item.itemCode;
+            
+            break;
+          }
+        }
+      }
+
+      if (!foundExisting) {
+        groupedItems.push({ ...item });
       }
     }
 
