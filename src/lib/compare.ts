@@ -362,17 +362,24 @@ export async function generateReport(
         const existingNameKey = normalizeMatchText(existing.itemName);
 
         let codeMatch = false;
+        let requiresHighNameSim = false;
+
         if (codeKey && existingCodeKey) {
           codeMatch = (codeKey === existingCodeKey);
         } else {
-          // If one or both lack a code, we consider it a potential match if names align highly
+          // Nếu 1 trong 2 thiếu mã, ta yêu cầu tên phải cực kỳ sát (>= 0.99) để tránh gộp nhầm các biến thể khác kích thước/màu sắc (vd: 7cm vs 9cm)
           codeMatch = true;
+          requiresHighNameSim = true;
         }
 
         if (codeMatch) {
           const nameSim = calculateNameSimilarity(item.itemName, existing.itemName);
           
-          if (nameSim >= 0.90 || nameKey === existingNameKey) {
+          const isNameAligned = requiresHighNameSim 
+            ? (nameSim >= 0.99 || nameKey === existingNameKey) 
+            : (nameSim >= 0.90 || nameKey === existingNameKey);
+            
+          if (isNameAligned) {
             foundExisting = true;
 
             // Sum quantities
